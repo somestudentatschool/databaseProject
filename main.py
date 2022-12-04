@@ -1,8 +1,6 @@
 # Requires PySimpleGUI package to be installed.
 
-# Note: Intentionally doesn't save the database changes between program runs!
-#       This is so you can test your database against our program without making you change everything in the database
-#       back for the next group. Everything still works locally as normal.
+# Be warned that this code will change the database depending on if you chose the rent, return a car, or add a new customer or vehicle
 
 import datetime
 
@@ -30,9 +28,11 @@ RENTAL_TYPE = {
     "weekly": 7,
 }
 
-
-connection = sql.connect("car.db")
-
+try:
+    connection = sql.connect("car.db")
+except:
+    print("Database not found.")
+    exit(0)
 
 def main():
     layout = [
@@ -101,6 +101,7 @@ def window_add_vehicle():
 
     layout = [
         [gui.Text(instructions)],
+        [gui.Text("VehicleID"), gui.InputText(key="VEHICLEID")],
         [gui.Text("Description"), gui.InputText(key="DESCRIPTION")],
         [gui.Text("Year"), gui.InputText(key="YEAR")],
         [gui.Text("Type"), gui.InputText(key="TYPE")],
@@ -115,6 +116,7 @@ def window_add_vehicle():
             break
 
         if event == "SUBMIT":
+            vin = values["VEHICLEID"]
             description = values["DESCRIPTION"]
             year = int(values["YEAR"])
             try:
@@ -126,7 +128,7 @@ def window_add_vehicle():
             except:
                 category = CATEGORY[values["CATEGORY"].lower()]
 
-            add_new_vehicle(description, year, type, category)
+            add_new_vehicle(vin, description, year, type, category)
 
         pass
     window.close()
@@ -188,6 +190,7 @@ def window_return_car():
     instructions = "Input rental info:"
     footnote = "Note: Vehicle Info can be the Vehicle ID or the Description.\n" \
                "Partial matching is enabled for Customer Name and Vehicle Info."
+    
 
     layout = [
         [gui.Text(instructions)],
@@ -218,6 +221,7 @@ def window_return_car():
 
 
 def window_view_customers():
+    numOfRows = 0
     instructions_text = "Enter a filter, or leave blank, and press submit.\n" \
                         "The filter should be formatted like a Where\n" \
                         "statement (without the \"WHERE\" keyword)."
@@ -230,6 +234,7 @@ def window_view_customers():
         [gui.Text("Filter"), gui.InputText(key="FILTER")],
         [gui.Submit(key="SUBMIT"), gui.Cancel("Clear", key="CLEAR")],
         [gui.Text(footnote)],
+        [gui.Text("Number of Rows: {}".format(numOfRows), key = "ROWS")],
     ]
     right_layout = [
         [gui.Table([], headings=["Customer ID (CustID)", "Customer Name (Name)", "Total Balance"], key="TABLE")]
@@ -249,10 +254,14 @@ def window_view_customers():
             break
 
         if event == "SUBMIT":
-            customers = get_customers(values["FILTER"])
+            customers, numOfRows = get_customers(values["FILTER"])
+            print(numOfRows)
             window["TABLE"].update(customers)
+            window["ROWS"].update("Number of Rows: {}".format(numOfRows))
         elif event == "CLEAR":
             window["TABLE"].update([])
+            numOfRows = 0
+            window["ROWS"].update("Number of Rows: {}".format(numOfRows))
 
         pass
     window.close()
@@ -260,6 +269,7 @@ def window_view_customers():
 
 
 def window_view_vehicles():
+    numOfRows = 0
     instructions_text = "Enter a filter, or leave blank, and press submit.\n" \
                         "The filter should be formatted like a Where\n" \
                         "statement (without the \"WHERE\" keyword)."
@@ -272,6 +282,7 @@ def window_view_vehicles():
         [gui.Text("Filter"), gui.InputText(key="FILTER")],
         [gui.Submit(key="SUBMIT"), gui.Cancel("Clear", key="CLEAR")],
         [gui.Text(footnote)],
+        [gui.Text("Number of Rows: {}".format(numOfRows), key="ROWS")],
     ]
     right_layout = [
         [gui.Table([], headings=["Vehicle ID", "Description", "Daily Average"], key="TABLE")]
@@ -291,10 +302,13 @@ def window_view_vehicles():
             break
 
         if event == "SUBMIT":
-            vehicles = get_vehicles(values["FILTER"])
+            vehicles, numOfRows = get_vehicles(values["FILTER"])
             window["TABLE"].update(vehicles)
+            window["ROWS"].update("Number of Rows: {}".format(numOfRows))
         elif event == "CLEAR":
             window["TABLE"].update([])
+            numOfRows = 0
+            window["ROWS"].update("Number of Rows: {}".format(numOfRows))
 
         pass
     window.close()
@@ -302,12 +316,24 @@ def window_view_vehicles():
 
 
 def add_new_customer(name: str, phone: str):
-    command = "INSERT INTO CUSTOMER (Name, Phone) " \
-              "VALUES (\"" + name + "\", \"" + phone + "\")"
+    maxCustID = 0
+    cursor = connection.cursor()
+    try: 
+        store = cursor.execute("SELECT max(CustID) FROM CUSTOMER").fetchone()
+        maxCustID = store[0]
+        maxCustID += 1
+    except:
+        gui.popup("Failed to get maximum Customer ID")
+
+    cursor.close()
+    command = "INSERT INTO CUSTOMER (CustID, Name, Phone) " \
+                "VALUES ({0}, '{1}', '{2}')".format(maxCustID, name, phone)
+              #"VALUES (\"" + name + "\", \"" + phone + "\")"
 
     cursor = connection.cursor()
     try:
         cursor.execute(command)
+        connection.commit()
         gui.popup("Customer " + name + " added.")
     except:
         gui.popup("SQL Query Failed: please make sure Name and Phone are valid.")
@@ -316,13 +342,14 @@ def add_new_customer(name: str, phone: str):
     pass
 
 
-def add_new_vehicle(description: str, year: int, type: int, category: int):
-    command = "INSERT INTO VEHICLE (Description, Year, Type, Category) " \
-              "VALUES (\"" + description + "\", " + str(year) + ", " + str(type) + ", " + str(category) + ")"
+def add_new_vehicle(vin: str, description: str, year: int, type: int, category: int):
+    command = "INSERT INTO VEHICLE (VehicleID, Description, Year, Type, Category) " \
+              "VALUES (\"" + vin + "\", \"" + description + "\", " + str(year) + ", " + str(type) + ", " + str(category) + ")"
 
     cursor = connection.cursor()
     try:
         cursor.execute(command)
+        connection.commit()
         gui.popup("Vehicle " + description + " added.")
     except:
         gui.popup("SQL Query Failed: please make sure the Description is valid.")
@@ -390,6 +417,7 @@ def rent_car(cid: int, v_type: int, v_category: int, start_date: str, rental_typ
 
     try:
         cursor.execute(command)
+        connection.commit()
         gui.popup("Car " + vid + " rented.")
     except:
         gui.popup("SQL Query Failed: please make sure all inputs are valid.")
@@ -442,6 +470,7 @@ def return_car(customer_name: str, vehicle_info: str, return_date: str):
                   "WHERE CustID=" + str(cid) + " AND VehicleID=\"" + vid + "\" AND date(ReturnDate)=date(\"" + return_date + "\")"
         try:
             cursor.execute(command)
+            connection.commit()
             gui.popup("Car " + vid + " returned.")
         except:
             gui.popup("SQL Query Failed: please make sure the customer name and return date is valid.")
@@ -479,7 +508,25 @@ def get_customers(filter: str = ""):
 
     cursor.close()
 
-    return results_table
+    command = "SELECT count(*) " \
+              "FROM CUSTOMER " \
+              "    LEFT JOIN (SELECT CustID as _CustID, Name as _Name, SUM(TotalAmount) as TotalBalance " \
+              "        FROM CUSTOMER " \
+              "            NATURAL JOIN RENTAL " \
+              "        WHERE PaymentDate IS NULL " \
+              "            OR PaymentDate=\"NULL\" " \
+              "        GROUP BY _CustID) ON CustID=_CustID " \
+              "WHERE " + filter + " " \
+              "ORDER BY TotalBalance DESC"
+    
+
+    cursor = connection.cursor()
+    try:
+        count = cursor.execute(command).fetchall()
+        countNum = count[0][0]
+    except:
+        gui.popup("SQL Query Failed: please check that the Filter is a valid WHERE clause.")
+    return results_table, countNum
 
 
 def get_vehicles(filter: str = ""):
@@ -507,7 +554,23 @@ def get_vehicles(filter: str = ""):
 
     cursor.close()
 
-    return results_table
+    command = "SELECT count(*) " \
+              "FROM VEHICLE " \
+              "    LEFT JOIN (SELECT VehicleID as _VIN, Description as _Description, TotalAmount / AVG(RentalType * Qty) as DailyAverage " \
+              "        FROM Vehicle " \
+              "            NATURAL JOIN RENTAL " \
+              "        GROUP BY _VIN) ON VehicleID=_VIN " \
+              "WHERE " + filter + " " \
+              "ORDER BY DailyAverage ASC"
+
+    cursor = connection.cursor()
+    try:
+        count = cursor.execute(command).fetchall()
+        countRows = count[0][0]
+    except:
+        gui.popup("SQL Query Failed: please check that the Filter is a valid WHERE clause.")
+
+    return results_table, countRows
 
 
 if __name__ == '__main__':
