@@ -144,7 +144,7 @@ def window_rent_car():
         [gui.Text("Customer ID"), gui.InputText(key="CUSTOMER_ID")],
         [gui.Text("Car Type"), gui.InputText(key="TYPE")],
         [gui.Text("Car Category"), gui.InputText(key="CATEGORY")],
-        [gui.Text("Start Date"), gui.InputText(key="CATEGORY")],
+        [gui.Text("Start Date"), gui.InputText(key="START_DATE")],
         [gui.Text("Rental Type"), gui.InputText(key="RENTAL_TYPE")],
         [gui.Text("Rental Periods"), gui.InputText(key="QTY")],
         [gui.Checkbox("Pay Now", key="PAY_NOW", default=False)],
@@ -362,17 +362,16 @@ def rent_car(cid: int, v_type: int, v_category: int, start_date: str, rental_typ
     cursor = connection.cursor()
 
     # Order Date:
-    order_date = datetime.datetime.today().date().strftime("%y-%m-%d")
+    order_date = datetime.datetime.today().date().strftime("%Y-%m-%d")
 
     # Return Date
-    s_date = datetime.datetime.strptime(start_date, "%y-%m-%d").date()
+    s_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
     r_date = s_date + datetime.timedelta(days=(rental_type * qty))
-    return_date = r_date.strftime("%y-%m-%d")
-
+    return_date = r_date.strftime("%Y-%m-%d")
     # Vehicle ID
     vt_command = "SELECT VehicleID " \
                  "FROM VEHICLE " \
-                 "WHERE Type=" + str(v_type) + " AND Catagory=" + str(v_category)
+                 "WHERE Type=" + str(v_type) + " AND Category=" + str(v_category)
     rv_command = "SELECT VehicleID " \
                  "FROM RENTAL " \
                  "WHERE date(StartDate) < date(\"" + return_date + "\") AND date(ReturnDate) > date(\"" + start_date + "\")"
@@ -463,7 +462,7 @@ def return_car(customer_name: str, vehicle_info: str, return_date: str):
     answer = gui.popup_yes_no("The total amount due is " + '${:,.2f}'.format(total_amount) + ", do you accept?")
 
     # Apply the change
-    payment_date = datetime.date.today().strftime("%y-%m-%d")
+    payment_date = datetime.date.today().strftime("%Y-%m-%d")
     if answer == "Yes":
         command = "UPDATE RENTAL " \
                   "SET PaymentDate=\"" + payment_date + "\" " \
